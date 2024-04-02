@@ -24,7 +24,21 @@ def fetch_content(url):
 def ai_summarize(content):
     """Use OpenAI to summarize the contents."""
     if len(content) < 1000:
-        return None
+        soup = BeautifulSoup(content, 'lxml')
+        return soup.text
+
+    # TODO Count tokens and concat if needed
+    is_trimmed = False
+    max_tokens = 16385
+    average_characters_per_token = 4
+
+    # Calculate safe character limit
+    safe_character_limit = (max_tokens * average_characters_per_token) - (2100*4)
+
+    if len(content) > safe_character_limit:
+        print(f"Trimmed content. Length: {len(content)} characters.")
+        content = content[:safe_character_limit]
+        is_trimmed = True
 
     # Use OpenAI chat API to summarize the content
     response = requests.post(
@@ -42,7 +56,12 @@ def ai_summarize(content):
         },
     )
     if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
+        content = response.json()["choices"][0]["message"]["content"]
+        if is_trimmed:
+            content = "<strong>AI Summary (conent trimmed)</strong>" + content
+        else:
+            content = "<strong>AI Summary</strong>" + content
+        return content
     else:
         print(f"Error summarizing content. {response.status_code}: {response.text}")
         return None
@@ -56,13 +75,15 @@ def extract_main_content(html_content, base_url):
     doc = Document(html_content)
     readable_content = doc.summary()
 
-    soup = BeautifulSoup(readable_content, 'lxml')
-    h1_tag = soup.find('h1')
-    if h1_tag:
-        h1_tag.decompose()
-    for img_tag in soup.find_all('img'):
-        img_tag.replace_with('[IMAGE]')
-    return str(soup)
+    # soup = BeautifulSoup(readable_content, 'lxml')
+    # h1_tag = soup.find('h1')
+    # if h1_tag:
+    #     h1_tag.decompose()
+    # for img_tag in soup.find_all('img'):
+    #     img_tag.replace_with('[IMAGE]')
+    # return str(soup)
+
+    return readable_content
 
 
 def parse_rss(rss_content):
@@ -93,11 +114,14 @@ def parse_rss(rss_content):
     return items
 
 
-def create_epub(items, output_filename='rss_feed.epub'):
+def create_epub(items, output_filename='Hacker Feed.epub'):
     """Create an EPUB book from a list of items including navigation links."""
+    title = f"Hacker News - {datetime.now().strftime('%B %d, %Y')}"
+    output_filename = f"{title}.epub"
+
     book = epub.EpubBook()
     book.set_identifier('id123456')
-    book.set_title(f"Hacker News - {datetime.now().strftime('%B %d, %Y')}")
+    book.set_title(title)
     book.set_language('en')
     book.add_author('Hacker News')
 
@@ -132,8 +156,8 @@ def create_epub(items, output_filename='rss_feed.epub'):
         content = f"<h1>{item['title']}</h1>"
         content += f"{navigation_html}"
         if item['ai_summary'] is not None:
-            content += f"<p>Summary: {item['ai_summary']}</p><hr>"
-        content += f"{item['content']}"
+            content += f"<p>{item['ai_summary']}</p>"
+        # content += f"{item['content']}"
 
         # Creating chapter
         chapter = epub.EpubHtml(title=item['title'], file_name=f'chap_{i}.xhtml', lang='en')
