@@ -114,7 +114,7 @@ def parse_rss(rss_content):
     return items
 
 
-def create_epub(items, output_filename='Hacker Feed.epub'):
+def create_epub(items):
     """Create an EPUB book from a list of items including navigation links."""
     title = f"Hacker News - {datetime.now().strftime('%B %d, %Y')}"
     output_filename = f"{title}.epub"
@@ -123,7 +123,7 @@ def create_epub(items, output_filename='Hacker Feed.epub'):
     book.set_identifier('id123456')
     book.set_title(title)
     book.set_language('en')
-    book.add_author('Hacker News')
+    book.add_author('MakePub')
 
     book.spine = ['nav']
     toc = []
@@ -190,11 +190,15 @@ def create_epub(items, output_filename='Hacker Feed.epub'):
 
 
 def main():
+
+    # Hacker News
     url = "https://news.ycombinator.com/rss"
     rss_content = fetch_content(url)
     if rss_content:
         items = parse_rss(rss_content)
-        create_epub(items, f"hacker_news_{datetime.now().strftime('%Y-%m-%d')}.epub")
+        create_epub(items)
+
+    # RSS file
 
 
 if __name__ == "__main__":
