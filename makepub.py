@@ -71,7 +71,7 @@ def fetch_feeds(opml):
 
     return feeds_content
 
-def create_article_content(article_index, number_articles, article, feed_index, feed_title):
+def create_article_content(article_index, number_articles, article, feed_index, number_feeds, feed_title):
 
     content = f"<h2>{article['title']}</h2>"
     if 'published' in article:
@@ -97,9 +97,33 @@ def create_article_content(article_index, number_articles, article, feed_index, 
     if article_index < number_articles:
         next_filename = f'article_{feed_index}_{article_index + 1}.xhtml'
     else:
-        next_filename = f'feed_{feed_index + 1}.xhtml'
+        if feed_index == number_feeds:
+            next_filename = 'nav.xhtml'
+        else:
+            next_filename = f'feed_{feed_index + 1}.xhtml'
 
     content += f" | <a href='{next_filename}'>Next &gt;&gt;</a></p>"
+
+    return content
+
+
+def create_feed_content(feed_title, feed):
+
+    content = f"<h1>{feed_title.upper()}</h1>"
+    content += f"<p>{datetime.now().strftime('%B %-d, %Y')}</p>"
+
+    if len(feed['articles']) == 0:
+
+        content += "<p>No articles today.</p>"
+
+    else:
+
+        content += "<ul>"
+
+        for article in feed['articles']:
+            content += f"<li><a href='{article['filename']}'>{article['title']}</a></li>"
+
+        content += "</ul>"
 
     return content
 
@@ -110,6 +134,7 @@ def create_epub(opml, feeds):
 
     book = epub.EpubBook()
     book.set_title(title)
+    book.set_language('en')
 
     spine_items = ['nav']  # Initial 'nav' for eBook navigation
     toc_items = []
@@ -121,7 +146,7 @@ def create_epub(opml, feeds):
 
         # Create the feed content
         feed_epub = epub.EpubHtml(title=feed_title.upper(), file_name=feed['filename'], lang='en')
-        feed_epub.content = f'<h1>{feed_title.upper()}</h1>'
+        feed_epub.content = create_feed_content(feed_title, feed)
         book.add_item(feed_epub)
         spine_items.append(feed_epub)
         toc_items.append(feed_epub)
@@ -132,7 +157,7 @@ def create_epub(opml, feeds):
 
             # Create a chapter file for each article
             article_epub = epub.EpubHtml(title=article['title'], file_name=article['filename'], lang='en')
-            article_epub.content = create_article_content(j, number_articles, article, i, feed_title)
+            article_epub.content = create_article_content(j, number_articles, article, i, number_feeds, feed_title)
 
             # Add to the appropriate lists
             book.add_item(article_epub)
