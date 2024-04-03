@@ -35,12 +35,12 @@ def read_opml(opml_path):
     return data
 
 
-def fetch_feeds(feeds):
+def fetch_feeds(opml):
     """Fetches the feeds and articles."""
 
     feeds_content = {}
 
-    for i, feed in enumerate(feeds['feeds'], start=1):
+    for i, feed in enumerate(opml['feeds'], start=1):
 
         print(f"Fetching {feed['title']}...")
         response = requests.get(feed['xmlUrl'])
@@ -49,6 +49,7 @@ def fetch_feeds(feeds):
 
         # TODO Limit to first 3 entries for testing
         for j, entry in enumerate(feed_data.entries[:3], start=1):
+
             article = {
                 'title': entry.title,
                 'link': entry.link,
@@ -61,11 +62,13 @@ def fetch_feeds(feeds):
                 article['author'] = entry.author
 
             articles.append(article)
+
         feeds_content[feed['title']] = {
             'articles': articles,
             'index': i,
             'filename': f'feed_{i}.xhtml',
         }
+
     return feeds_content
 
 
@@ -97,68 +100,70 @@ def create_toc(title, articles):
     return toc
 
 
-def create_epub(feeds, articles):
-    title = feeds['title'] + ' - ' + datetime.now().strftime('%B %-d, %Y')
+def create_epub(opml, feeds):
+
+    title = opml['title'] + ' - ' + datetime.now().strftime('%B %-d, %Y')
 
     book = epub.EpubBook()
     book.set_title(title)
 
     # Create a custom nav.xhtml
-    nav_item = epub.EpubItem(
-        uid='nav',
-        file_name='nav.xhtml',
-        media_type='application/xhtml+xml')
-    nav_item.content = create_toc(title, articles)
-    book.add_item(nav_item)
+    # nav_item = epub.EpubItem(
+    #     uid='nav',
+    #     file_name='nav.xhtml',
+    #     media_type='application/xhtml+xml')
+    # nav_item.content = create_toc(title, articles)
+    # book.add_item(nav_item)
 
     spine_items = ['nav']  # Initial 'nav' for eBook navigation
+    toc_items = []
 
     # Iterate over the articles dictionary
-    for i, (feed_title, articles) in enumerate(articles.items()):
+    for i, (feed_title, feed) in enumerate(feeds.items()):
 
-        for j, article in enumerate(articles['articles']):
+        # Create the feed content
+        feed_epub = epub.EpubHtml(title=feed_title, file_name=feed['filename'], lang='en')
+        feed_epub.content = f'<h1>{feed_title.upper()}</h1>'
+        book.add_item(feed_epub)
+        spine_items.append(feed_epub)
+        toc_items.append(feed_epub)
 
-            article_title = article['title']
-            article_content = f'<h1>{article_title}</h1>'
-            if 'published' in article:
-                article_content += f"<p>{time.strftime('%B %d, %Y, %I:%M %p', article['published'])}</p>"
-            if 'author' in article:
-                article_content += f"<p>{article['author']}</p>"
-            if 'link' in article:
-                article_content += f"<p><a href='{article['link']}'>Full Article</a></p>"
+        for j, article in enumerate(feed['articles']):
 
             # Create a chapter file for each article
-            epub_chapter = epub.EpubHtml(title=article_title, file_name=article['filename'], lang='en')
-            epub_chapter.content = article_content
+            article_epub = epub.EpubHtml(title=article['title'], file_name=article['filename'], lang='en')
+            article_epub.content = f"<h2>{article['title']}</h2>"
+            if 'published' in article:
+                article_epub.content += f"<p>{time.strftime('%B %d, %Y, %I:%M %p', article['published'])}</p>"
+            if 'author' in article:
+                article_epub.content += f"<p>{article['author']}</p>"
+            if 'link' in article:
+                article_epub.content += f"<p><a href='{article['link']}'>Full Article</a></p>"
 
-            book.add_item(epub_chapter)
-            spine_items.append(epub_chapter)
+            # Add to the appropriate lists
+            book.add_item(article_epub)
+            spine_items.append(article_epub)
+            toc_items.append(article_epub)
 
 
     # Setting the table of contents and spine
-    # book.toc = tuple(toc_feeds)
+    book.toc = toc_items
 
     book.add_item(epub.EpubNcx())
-    # book.add_item(epub.EpubNav())
+    book.add_item(epub.EpubNav())
     book.spine = spine_items
 
     # Write the EPUB file
     epub.write_epub(f"{title}.epub", book, {})
+    return f"{title}.epub"
 
 
 def main():
 
-    feeds = read_opml(OPML_PATH)
-    # print(feeds)
-    articles = fetch_feeds(feeds)
-    # print(articles)
-    create_epub(feeds, articles)
-
-
-
-    # output_path = f"{feeds_info['title']} - {datetime.now().strftime('%B %-d, %Y')}.epub"
-    # create_epub_from_opml(feeds_info, output_path)
-    # print(f"EPUB created: {output_path}")
+    opml = read_opml(OPML_PATH)
+    feeds = fetch_feeds(opml)
+    epub_file = create_epub(opml, feeds)
+    print(f"EPUB created: {epub_file}")
 
 
 # Main execution here
