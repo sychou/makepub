@@ -1,5 +1,10 @@
+# TODOs
+# - Add error handling for OpenAI API rate limiting
+# - Cache summaries to avoid re-summarizing the same content
+# - Get the text of the URLs instead of the HTML
+
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from ebooklib import epub
 from readability.readability import Document
@@ -8,12 +13,95 @@ import lxml.etree as ET
 import os
 import requests
 import time
+import hashlib
 
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 OPML_PATH = 'makepub.opml'
+
+CACHE_DIR = 'cache'
+
+MAX_ARTICLES = 3
+
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
+
+def ai_summarize(url):
+    """Use OpenAI to summarize the contents."""
+
+    print(f"Summarizing {url}...")
+
+    # Check if the content is already cached
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
+    if os.path.exists(cache_file_path):
+        with open(cache_file_path, 'r') as file:
+            print(f"=> Using cached content for {url}")
+            return file.read()
+
+    content = "Nada"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'lxml')
+        content = soup.text
+    except requests.exceptions.RequestException as e:
+        print(f"=> Error fetching content from {url}: {e}")
+        content = f"Error fetching content from {url}: {e}"
+
+    if len(content) < 1000:
+        print("=> Returning all text as summary.")
+        return content
+
+    # TODO Count tokens and concat if needed
+    is_trimmed = False
+    max_tokens = 16385
+    average_characters_per_token = 4
+
+    # Calculate safe character limit
+    safe_character_limit = (max_tokens * average_characters_per_token) - (4000*4)
+
+    if len(content) > safe_character_limit:
+        print(f"=> Trimmed content. Length: {len(content)} characters.")
+        content = content[:safe_character_limit]
+        is_trimmed = True
+
+    # Use OpenAI chat API to summarize the content
+    print(f"=> Summarizing content with AI")
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Please write a concise (under 2000 characters) and comprehensive summary of the following using bullet points:\n\n{content}"},
+            ]
+        },
+    )
+    if response.status_code == 200:
+        content = response.json()["choices"][0]["message"]["content"]
+        if is_trimmed:
+            content = "<strong>AI Summary (conent trimmed):</strong> " + content
+        else:
+            content = "<strong>AI Summary:</strong> " + content
+
+        # Cache the content
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
+        with open(cache_file_path, 'w') as file:
+            file.write(content)
+
+        return content
+    else:
+        # TODO Better handling for rate limiting and length
+        print(f"Error summarizing content. {response.status_code}: {response.text}")
+        return None
 
 
 def read_opml(opml_path):
@@ -47,21 +135,30 @@ def fetch_feeds(opml):
         articles = []
         feed_data = feedparser.parse(response.content)
 
-        # TODO Limit to first 3 entries for testing
-        for j, entry in enumerate(feed_data.entries[:3], start=1):
+        for j, entry in enumerate(feed_data.entries[:MAX_ARTICLES], start=1):
 
-            article = {
-                'title': entry.title,
-                'link': entry.link,
-                # 'description': entry.description,
-                'published': entry.published_parsed,
-                'index': j,
-                'filename': f'article_{i}_{j}.xhtml',
-            }
-            if 'author' in entry:
-                article['author'] = entry.author
+            # Check that article published date is within the last 24 hours
+            cutoff_date = datetime.now() - timedelta(days=1)
+            published_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
 
-            articles.append(article)
+            if published_date > cutoff_date:
+
+                ai_summary = ai_summarize(entry.link)
+                time.sleep(1)
+
+                article = {
+                    'title': entry.title,
+                    'link': entry.link,
+                    # 'description': entry.description,
+                    'published': published_date,
+                    'index': j,
+                    'filename': f'article_{i}_{j}.xhtml',
+                    'ai_summary': ai_summary,
+                }
+                if 'author' in entry:
+                    article['author'] = entry.author
+
+                articles.append(article)
 
         feeds_content[feed['title']] = {
             'articles': articles,
@@ -71,15 +168,14 @@ def fetch_feeds(opml):
 
     return feeds_content
 
+
 def create_article_content(article_index, number_articles, article, feed_index, number_feeds, feed_title):
 
     content = f"<h2>{article['title']}</h2>"
     if 'published' in article:
-        content += f"<p>{time.strftime('%B %d, %Y, %I:%M %p', article['published'])}</p>"
+        content += f"<p>{article['published'].strftime('%B %d, %Y, %I:%M %p')}<br>"
     if 'author' in article:
-        content += f"<p>{article['author']}</p>"
-    if 'link' in article:
-        content += f"<p><a href='{article['link']}'>Full Article</a></p>"
+        content += f"{article['author']}</p>"
 
     # Add navigation markers
     # Navigation to the previous article
@@ -103,6 +199,11 @@ def create_article_content(article_index, number_articles, article, feed_index, 
             next_filename = f'feed_{feed_index + 1}.xhtml'
 
     content += f" | <a href='{next_filename}'>Next &gt;&gt;</a></p>"
+
+    content += f"<p>{article['ai_summary']}</p>"
+
+    if 'link' in article:
+        content += f"<p><a href='{article['link']}'>Full Article</a></p>"
 
     return content
 
@@ -148,7 +249,7 @@ def create_epub(opml, feeds):
         feed_epub = epub.EpubHtml(title=feed_title.upper(), file_name=feed['filename'], lang='en')
         feed_epub.content = create_feed_content(feed_title, feed)
         book.add_item(feed_epub)
-        spine_items.append(feed_epub)
+        spine_items.append(feed_epub) # type: ignore
         toc_items.append(feed_epub)
 
         number_articles = len(feed['articles'])
@@ -161,7 +262,7 @@ def create_epub(opml, feeds):
 
             # Add to the appropriate lists
             book.add_item(article_epub)
-            spine_items.append(article_epub)
+            spine_items.append(article_epub) # type: ignore
             toc_items.append(article_epub)
 
 
