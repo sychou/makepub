@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from ebooklib import epub
-from readability.readability import Document
 import feedparser
 import lxml.etree as ET
 import os
@@ -85,8 +84,11 @@ def ai_summarize(url):
     )
     if response.status_code == 200:
         content = response.json()["choices"][0]["message"]["content"]
+
+        # TODO Clean up common AI artifacts such as the ``` markers and extra <h1> tags
+
         if is_trimmed:
-            content = "<strong>AI Summary (conent trimmed):</strong> " + content
+            content = "<strong>AI Summary (content trimmed):</strong> " + content
         else:
             content = "<strong>AI Summary:</strong> " + content
 
@@ -186,7 +188,7 @@ def create_article_content(article_index, number_articles, article, feed_index, 
 
     content += f"<p><a href='{prev_filename}'>&lt;&lt; Previous</a> | "
 
-    content += f"<a href='nav.xhtml'>{feed_title} ({article_index}/{number_articles})</a>"
+    content += f"<a href='feed_{feed_index}.xhtml'>{feed_title} ({article_index}/{number_articles})</a>"
 
     # Navigation to the next article
     if article_index < number_articles:
@@ -207,10 +209,26 @@ def create_article_content(article_index, number_articles, article, feed_index, 
     return content
 
 
-def create_feed_content(feed_title, feed):
+def create_feed_content(feed_title, feed, number_feeds):
 
-    content = f"<h1>{feed_title.upper()}</h1>"
-    content += f"<p>{datetime.now().strftime('%B %-d, %Y')}</p>"
+    content = f"<h1>{feed_title}</h1>"
+    # content += f"<p>{datetime.now().strftime('%B %-d, %Y')}</p>"
+
+    # Add navigation markers
+    if feed['index'] == 1:
+        prev_filename = 'nav.xhtml'
+    else:
+        prev_filename = f'feed_{feed["index"] - 1}.xhtml'
+
+    content += f"<p><a href='{prev_filename}'>&lt;&lt; Previous</a> | "
+    content += f"<a href='nav.xhtml'>TOC</a> | "
+
+    if feed['index'] == number_feeds:
+        next_filename = 'nav.xhtml'
+    else:
+        next_filename = f'feed_{feed["index"] + 1}.xhtml'
+
+    content += f"<a href='{next_filename}'>Next &gt;&gt;</a></p>"
 
     if len(feed['articles']) == 0:
 
@@ -247,8 +265,8 @@ def create_epub(opml, feeds):
     for i, (feed_title, feed) in enumerate(feeds.items(), start=1):
 
         # Create the feed content
-        feed_epub = epub.EpubHtml(title=feed_title.upper(), file_name=feed['filename'], lang='en')
-        feed_epub.content = create_feed_content(feed_title, feed)
+        feed_epub = epub.EpubHtml(title=feed_title, file_name=feed['filename'], lang='en')
+        feed_epub.content = create_feed_content(feed_title, feed, number_feeds)
         book.add_item(feed_epub)
         spine_items.append(feed_epub) # type: ignore
         toc_items.append(feed_epub)
@@ -264,7 +282,7 @@ def create_epub(opml, feeds):
             # Add to the appropriate lists
             book.add_item(article_epub)
             spine_items.append(article_epub) # type: ignore
-            toc_items.append(article_epub)
+            # toc_items.append(article_epub)
 
 
     # Setting the table of contents and spine
