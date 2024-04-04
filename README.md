@@ -8,6 +8,14 @@ Uses the [OPML format](https://en.wikipedia.org/wiki/OPML) that many RSS readers
 
 You also need to set the `OPENAI_API_KEY` environment variable to your OpenAI API key. Or set it in a file named '.env' in the same directory as the script.
 
+Before running, you will also need to install the required Python packages. I highly suggest using a venv to avoid conflicts with other Python packages.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## Usage
 
 ```bash
