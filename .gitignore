@@ -1,5 +1,9 @@
+__pycache__/
 .DS_Store
 .venv
 .env
 pyrightconfig.json
 tmp
+feeds.opml
+*.epub
+cache/
