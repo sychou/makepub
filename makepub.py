@@ -1,7 +1,6 @@
 # TODOs
 # - Add error handling for OpenAI API rate limiting
-# - Cache summaries to avoid re-summarizing the same content
-# - Get the text of the URLs instead of the HTML
+# - Add counter of how many tokens are used
 
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -19,11 +18,11 @@ import hashlib
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-OPML_PATH = 'makepub.opml'
+OPML_PATH = 'feeds.opml'
 
 CACHE_DIR = 'cache'
 
-MAX_ARTICLES = 3
+MAX_ARTICLES = 25
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
@@ -80,7 +79,7 @@ def ai_summarize(url):
             "model": "gpt-3.5-turbo",
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"Please write a concise (under 2000 characters) and comprehensive summary of the following using bullet points:\n\n{content}"},
+                {"role": "user", "content": f"Please write a concise (under 2000 characters) and comprehensive summary of the following using bullet points. When responding, use HTML.\n\n{content}"},
             ]
         },
     )
@@ -235,7 +234,9 @@ def create_epub(opml, feeds):
 
     book = epub.EpubBook()
     book.set_title(title)
+    book.set_identifier('makepub')
     book.set_language('en')
+    book.add_author('Makepub')
 
     spine_items = ['nav']  # Initial 'nav' for eBook navigation
     toc_items = []
