@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="1.1">
+	<head>
+		<title>Makepub Feeds</title>
+	</head>
+<body>
+	<outline text="Crypto" title="Crypto">
+		<outline text="CoinDesk" title="CoinDesk" description="" type="rss" version="RSS" htmlUrl="https://www.coindesk.com/" xmlUrl="https://feeds.feedburner.com/CoinDesk"/>
+	</outline>
+	<outline text="News" title="News">
+		<outline text="BBC World News" title="BBC World News" description="" type="rss" version="RSS" htmlUrl="https://www.bbc.co.uk/news/world" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml"/>
+	</outline>
+	<outline text="Tech" title="Tech">
+		<outline text="TechCrunch" title="TechCrunch" description="" type="rss" version="RSS" htmlUrl="https://techcrunch.com/" xmlUrl="https://techcrunch.com/feed/"/>
+	</outline>
+	</body>
+</opml>
