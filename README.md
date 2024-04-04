@@ -14,4 +14,4 @@ You also need to set the `OPENAI_API_KEY` environment variable to your OpenAI AP
 python makepub.py
 ```
 
-This will create an EPub file in the same directory. You can open this file in any EPub reader.
+This will create an EPub file in the same directory. The name of the file is based on the title in the `feeds.opml` file with the current date appended. For example, `Makepub Feeds - April 3, 2024.epub`. You can open this file in any EPub reader.
