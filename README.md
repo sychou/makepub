@@ -22,15 +22,13 @@ SMTP_PASSWORD=your_email_password (or Google App Password)
 
 As `sample_env` file has been provided to use instead of setting (or to override) the required environment variables. Enter your values and rename (or copy) the `sample_env` file to `.env`.
 
-````bash
-
 Before running, you will also need to install the required Python packages. I highly suggest using a venv to avoid conflicts with other Python packages.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-````
+```
 
 ## Usage
 
