@@ -6,7 +6,23 @@ Makes an EPub file out of an RSS OPML. Each RSS feed is added as a chapter in th
 
 Uses the [OPML format](https://en.wikipedia.org/wiki/OPML) that many RSS readers can export. A sample file, `sample_feeds.opml` is provided in the repo. To use it, rename (or copy) it to `feeds.opml`. You can directly edit the file.
 
-You also need to set the `OPENAI_API_KEY` environment variable to your OpenAI API key. Or set it in a file named '.env' in the same directory as the script.
+You need to set the following environment variables (or specify them in a .env file):
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+```
+
+If you want to send your epub file to your Kindle, you can set the following environment variables:
+
+```bash
+SMTP_FROM=your@email
+SMTP_TO=your_kindle@email
+SMTP_PASSWORD=your_email_password (or Google App Password)
+```
+
+As `sample_env` file has been provided to use instead of setting (or to override) the required environment variables. Enter your values and rename (or copy) the `sample_env` file to `.env`.
+
+````bash
 
 Before running, you will also need to install the required Python packages. I highly suggest using a venv to avoid conflicts with other Python packages.
 
@@ -14,7 +30,7 @@ Before running, you will also need to install the required Python packages. I hi
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
+````
 
 ## Usage
 
