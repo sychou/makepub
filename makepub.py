@@ -12,15 +12,17 @@ import os
 import requests
 import time
 import hashlib
-
+import smtplib
+from email.message import EmailMessage
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+SMTP_FROM = os.getenv('SMTP_FROM')
+SMTP_TO = os.getenv('SMTP_TO')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 
 OPML_PATH = 'feeds.opml'
-
 CACHE_DIR = 'cache'
-
 MAX_ARTICLES = 25
 
 if not os.path.exists(CACHE_DIR):
@@ -297,12 +299,50 @@ def create_epub(opml, feeds):
     return f"{title}.epub"
 
 
+def email_epub(epub_file):
+
+    if not SMTP_PASSWORD or not SMTP_FROM or not SMTP_TO:
+        print("SMTP variables not set in the environment variables. Epub file not emailed.")
+        exit()
+
+    # Generate today's date in the specified format and setup the filename
+    current_date = datetime.now().strftime("%B %-d, %Y")
+
+    # Check if file exists
+    if not os.path.isfile(epub_file):
+        print(f"Error: The file '{epub_file}' was not found.")
+        exit()
+
+    # Create the email message
+    msg = EmailMessage()
+    msg['Subject'] = epub_file
+    msg['From'] = SMTP_FROM
+    msg['To'] = SMTP_TO
+    msg.set_content('Please find attached the document.')
+
+    # Attach the file
+    with open(epub_file, 'rb') as f:
+        file_data = f.read()
+        file_type = 'application/epub+zip'
+        msg.add_attachment(file_data, maintype='application', subtype='epub+zip', filename=epub_file)
+
+    # Send the email through GMail's SMTP server
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(SMTP_FROM, SMTP_PASSWORD)
+            smtp.send_message(msg)
+            print("Email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+
 def main():
 
     opml = read_opml(OPML_PATH)
     feeds = fetch_feeds(opml)
     epub_file = create_epub(opml, feeds)
     print(f"EPUB created: {epub_file}")
+    email_epub(epub_file)
 
 
 # Main execution here
