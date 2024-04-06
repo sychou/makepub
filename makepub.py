@@ -1,29 +1,30 @@
-# TODOs
-# - Add error handling for OpenAI API rate limiting
-# - Add counter of how many tokens are used
-
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from ebooklib import epub
+from email.message import EmailMessage
 import feedparser
+import hashlib
+import json
 import lxml.etree as ET
 import os
 import requests
-import time
-import hashlib
 import smtplib
-from email.message import EmailMessage
+import time
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 SMTP_FROM = os.getenv('SMTP_FROM')
 SMTP_TO = os.getenv('SMTP_TO')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
+SMTP_SERVER = os.getenv('SMTP_SERVER')
 
 OPML_PATH = 'feeds.opml'
 CACHE_DIR = 'cache'
 MAX_ARTICLES = 25
+DAYS_CUTFF = 0.6
+
+TOKENS_USED = 0
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
@@ -31,29 +32,27 @@ if not os.path.exists(CACHE_DIR):
 def ai_summarize(url):
     """Use OpenAI to summarize the contents."""
 
-    print(f"Summarizing {url}...")
+    print(f"=> Summarizing {url}", end="")
 
     # Check if the content is already cached
     url_hash = hashlib.md5(url.encode()).hexdigest()
     cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
     if os.path.exists(cache_file_path):
         with open(cache_file_path, 'r') as file:
-            print(f"=> Using cached content for {url}")
-            return file.read()
+            file_date = os.path.getmtime(cache_file_path)
+            timestamp = datetime.fromtimestamp(file_date).strftime('%Y-%m-%d %H:%M')
+            print(f"=> Using cache")
+            return f"<p>**Cached {timestamp}**</p>\n{file.read()}"
 
-    content = "Nada"
+    soup_text = ""
     try:
         response = requests.get(url)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'lxml')
-        content = soup.text
+        soup_text = soup.text
     except requests.exceptions.RequestException as e:
-        print(f"=> Error fetching content from {url}: {e}")
-        content = f"Error fetching content from {url}: {e}"
-
-    if len(content) < 1000:
-        print("=> Returning all text as summary.")
-        return content
+        print(f"=> Error fetching content: {e}")
+        return f"Error fetching content from {url}: {e}"
 
     # TODO Count tokens and concat if needed
     is_trimmed = False
@@ -63,14 +62,14 @@ def ai_summarize(url):
     # Calculate safe character limit
     safe_character_limit = (max_tokens * average_characters_per_token) - (4000*4)
 
-    if len(content) > safe_character_limit:
-        print(f"=> Trimmed content. Length: {len(content)} characters.")
-        content = content[:safe_character_limit]
+    if len(soup_text) > safe_character_limit:
+        print(f"=> Trimmed content. Length: {len(soup_text)} characters.")
+        soup_text = soup_text[:safe_character_limit]
         is_trimmed = True
 
     # Use OpenAI chat API to summarize the content
     print(f"=> Summarizing content with AI")
-    response = requests.post(
+    ai_response = requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -78,21 +77,37 @@ def ai_summarize(url):
         },
         json={
             "model": "gpt-3.5-turbo",
+            "response_format": { "type": "json_object" },
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"Please write a concise (under 2000 characters) and comprehensive summary of the following using bullet points. When responding, use HTML.\n\n{content}"},
+                {"role": "system", "content": "You are a helpful research assistant tasked with summarizing online content."},
+                {"role": "user", "content": "Please provide a summary of the content provided using abstractive techniques. Ignore advertising content. Try to limit the summary to no more than 1000 characters and 4-6 bullet points."},
+                {"role": "user", "content": 'Respond with json using the provided schema for your response. The abstract should be 1-2 sentences and you can add additional bullets as needed.\n\n{"responseSchema":{"title":"string","author":"string","datePublished":"date","abstract":"string","summary":[{"bullet":"string"},{"bullet":"string"},{"bullet":"string"}]}}'},
+                {"role": "user", "content": f"<content>\n{soup_text}\n</content>"},
             ]
         },
     )
-    if response.status_code == 200:
-        content = response.json()["choices"][0]["message"]["content"]
 
-        # TODO Clean up common AI artifacts such as the ``` markers and extra <h1> tags
+    if ai_response.status_code == 200:
 
-        if is_trimmed:
-            content = "<strong>AI Summary (content trimmed):</strong> " + content
-        else:
-            content = "<strong>AI Summary:</strong> " + content
+        # Get the number of tokens used
+        global TOKENS_USED
+        TOKENS_USED += ai_response.json()['usage']['total_tokens']
+
+        ai_content = ai_response.json()["choices"][0]["message"]["content"]
+
+        try:
+            ai_content_json = json.loads(ai_content)
+            # Process the JSON content if needed
+            content = f'<p>{ai_content_json["responseSchema"]["abstract"]}</p>\n<ul>\n'
+            for bullet in ai_content_json["responseSchema"]["summary"]:
+                content += f"<li>{bullet['bullet']}</li>\n"
+            content += "</ul>"
+        except Exception:
+            # If the content is not JSON, pass it through
+            if is_trimmed:
+                content = "<strong>**Content trimmed**</strong> " + ai_content
+            else:
+                content = "<strong>**Passthrough**</strong> " + ai_content
 
         # Cache the content
         url_hash = hashlib.md5(url.encode()).hexdigest()
@@ -103,8 +118,8 @@ def ai_summarize(url):
         return content
     else:
         # TODO Better handling for rate limiting and length
-        print(f"Error summarizing content. {response.status_code}: {response.text}")
-        return None
+        print(f"Error summarizing content. {ai_response.status_code}: {ai_response.text}")
+        return f"Error summarizing content. {ai_response.status_code}: {ai_response.text}"
 
 
 def read_opml(opml_path):
@@ -140,8 +155,8 @@ def fetch_feeds(opml):
 
         for j, entry in enumerate(feed_data.entries[:MAX_ARTICLES], start=1):
 
-            # Check that article published date is within the last 24 hours
-            cutoff_date = datetime.now() - timedelta(days=1)
+            # Check that article published date is within a certain cutoff
+            cutoff_date = datetime.now() - timedelta(days=DAYS_CUTFF)
             published_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
 
             if published_date > cutoff_date:
@@ -250,13 +265,14 @@ def create_feed_content(feed_title, feed, number_feeds):
 
 def create_epub(opml, feeds):
 
-    title = opml['title'] + ' - ' + datetime.now().strftime('%B %-d, %Y')
+    title = f"{opml['title']} {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
 
     book = epub.EpubBook()
     book.set_title(title)
-    book.set_identifier('makepub')
+    book.set_identifier('makepub' + str(int(time.time())))
     book.set_language('en')
     book.add_author('Makepub')
+    book.add_metadata('calibre', 'series', 'Makepub')
 
     spine_items = ['nav']  # Initial 'nav' for eBook navigation
     toc_items = []
@@ -301,7 +317,7 @@ def create_epub(opml, feeds):
 
 def email_epub(epub_file):
 
-    if not SMTP_PASSWORD or not SMTP_FROM or not SMTP_TO:
+    if not SMTP_PASSWORD or not SMTP_FROM or not SMTP_TO or not SMTP_SERVER:
         print("SMTP variables not set in the environment variables. Epub file not emailed.")
         exit()
 
