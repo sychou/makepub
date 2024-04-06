@@ -18,6 +18,7 @@ If you want to send your epub file to your Kindle, you can set the following env
 SMTP_FROM=your@email
 SMTP_TO=your_kindle@email
 SMTP_PASSWORD=your_email_password (or Google App Password)
+SMTP_SERVER=smtp.gmail.com (or whatever your email provider uses)
 ```
 
 As `sample_env` file has been provided to use instead of setting (or to override) the required environment variables. Enter your values and rename (or copy) the `sample_env` file to `.env`.

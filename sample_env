@@ -1,4 +1,5 @@
 SMTP_FROM=your@email
 SMTP_TO=your_kindle@email
 SMTP_PASSWORD=your smtp server password
+SMTP_SERVER=smtp.gmail.com
 OPENAI_API_KEY=your Open AI API key
