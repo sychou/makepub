@@ -4,11 +4,9 @@ h2 {
 }
 
 body ul {
-    padding-left: 0;
-    margin-left: 0;
+    padding-left: 25px;
 }
 
-body ul li {
-    margin-left: 0;
-    padding-left: 0;
+body li {
+    margin-bottom: 3px;
 }

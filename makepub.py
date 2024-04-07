@@ -290,7 +290,8 @@ def create_epub(opml, feeds):
 
     number_feeds = len(feeds)
 
-    title = f"{opml['title']} - {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
+    # title = f"{opml['title']} - {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
+    title = f"Makepub - {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
 
     book = epub.EpubBook()
     book.set_title(title)
@@ -311,29 +312,31 @@ def create_epub(opml, feeds):
     # Iterate over the feeds dictionary
     for i, (feed_title, feed) in enumerate(feeds.items(), start=1):
 
-        # Create the feed content
-        feed_epub = epub.EpubHtml(title=feed_title, file_name=feed['filename'], lang='en')
-        feed_epub.content = create_feed_content(feed_title, feed, number_feeds)
-        feed_epub.add_item(nav_css)
-
-        # Add to the appropriate lists
-        book.add_item(feed_epub)
-        spine_items.append(feed_epub) # type: ignore
-        toc_items.append(feed_epub)
-
         number_articles = len(feed['articles'])
 
-        for j, article in enumerate(feed['articles'], start=1):
+        if number_articles > 0:
 
-            # Create a chapter file for each article
-            article_epub = epub.EpubHtml(title=article['title'], file_name=article['filename'], lang='en')
-            article_epub.content = create_article_content(j, number_articles, article, i, number_feeds, feed_title)
-            article_epub.add_item(nav_css)
+            # Create the feed content
+            feed_epub = epub.EpubHtml(title=feed_title, file_name=feed['filename'], lang='en')
+            feed_epub.content = create_feed_content(feed_title, feed, number_feeds)
+            feed_epub.add_item(nav_css)
 
             # Add to the appropriate lists
-            book.add_item(article_epub)
-            spine_items.append(article_epub) # type: ignore
-            # toc_items.append(article_epub)
+            book.add_item(feed_epub)
+            spine_items.append(feed_epub) # type: ignore
+            toc_items.append(feed_epub)
+
+            for j, article in enumerate(feed['articles'], start=1):
+
+                # Create a chapter file for each article
+                article_epub = epub.EpubHtml(title=article['title'], file_name=article['filename'], lang='en')
+                article_epub.content = create_article_content(j, number_articles, article, i, number_feeds, feed_title)
+                article_epub.add_item(nav_css)
+
+                # Add to the appropriate lists
+                book.add_item(article_epub)
+                spine_items.append(article_epub) # type: ignore
+                # toc_items.append(article_epub)
 
 
     # Setting the table of contents and spine
