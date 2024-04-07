@@ -1,0 +1,14 @@
+/* styles.css */
+h2 {
+    font-size: 1.25em; /* Or your preferred size */
+}
+
+ul {
+    padding-left: 0px;
+    margin-left: 0;
+}
+
+li {
+    margin-left: 0;
+    padding-left: 0;
+}

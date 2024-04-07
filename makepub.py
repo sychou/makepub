@@ -32,18 +32,23 @@ if not os.path.exists(CACHE_DIR):
 def ai_summarize(url):
     """Use OpenAI to summarize the contents."""
 
-    print(f"=> Summarizing {url}", end="")
+    print(f"Summarizing {url}")
 
     # Check if the content is already cached
+    cache = False
     url_hash = hashlib.md5(url.encode()).hexdigest()
     cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
     if os.path.exists(cache_file_path):
+        cache = True
         with open(cache_file_path, 'r') as file:
+            ai_response_json = json.loads(file.read())
+            ai_content_json = json.loads(ai_response_json["choices"][0]["message"]["content"])["responseSchema"]
             file_date = os.path.getmtime(cache_file_path)
-            timestamp = datetime.fromtimestamp(file_date).strftime('%Y-%m-%d %H:%M')
-            print(f"=> Using cache")
-            return f"<p>**Cached {timestamp}**</p>\n{file.read()}"
+            ai_content_json['cache'] = datetime.fromtimestamp(file_date).strftime('%Y-%m-%d %H:%M')
+            print(f"=> Using cache {cache_file_path}")
+            return ai_content_json
 
+    # Fetch the content and pull out just the text
     soup_text = ""
     try:
         response = requests.get(url)
@@ -54,12 +59,11 @@ def ai_summarize(url):
         print(f"=> Error fetching content: {e}")
         return f"Error fetching content from {url}: {e}"
 
+    # Trim the content if too big
     # TODO Count tokens and concat if needed
     is_trimmed = False
     max_tokens = 16385
     average_characters_per_token = 4
-
-    # Calculate safe character limit
     safe_character_limit = (max_tokens * average_characters_per_token) - (4000*4)
 
     if len(soup_text) > safe_character_limit:
@@ -68,60 +72,62 @@ def ai_summarize(url):
         is_trimmed = True
 
     # Use OpenAI chat API to summarize the content
-    print(f"=> Summarizing content with AI")
-    ai_response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "gpt-3.5-turbo",
-            "response_format": { "type": "json_object" },
-            "messages": [
-                {"role": "system", "content": "You are a helpful research assistant tasked with summarizing online content."},
-                {"role": "user", "content": "Please provide a summary of the content provided using abstractive techniques. Ignore advertising content. Try to limit the summary to no more than 1000 characters and 4-6 bullet points."},
-                {"role": "user", "content": 'Respond with json using the provided schema for your response. The abstract should be 1-2 sentences and you can add additional bullets as needed.\n\n{"responseSchema":{"title":"string","author":"string","datePublished":"date","abstract":"string","summary":[{"bullet":"string"},{"bullet":"string"},{"bullet":"string"}]}}'},
-                {"role": "user", "content": f"<content>\n{soup_text}\n</content>"},
-            ]
-        },
-    )
+    print(f"=> Contacting AI")
 
-    if ai_response.status_code == 200:
+    # Retry if the response is not 200
+    while True:
+        ai_response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-3.5-turbo",
+                "response_format": { "type": "json_object" },
+                "messages": [
+                    {"role": "system", "content": "You are a helpful research assistant tasked with summarizing online content."},
+                    {"role": "user", "content": "Please provide a summary of the content provided using abstractive techniques. Ignore advertising content. Try to limit the summary to no more than 1000 characters and 4-6 bullet points."},
+                    {"role": "user", "content": 'Respond with json using the provided schema for your response. The abstract should be 1-2 sentences and you can add additional bullets as needed.\n\n{"responseSchema":{"title":"string","author":"string","datePublished":"date","abstract":"string","summary":[{"bullet":"string"},{"bullet":"string"},{"bullet":"string"}]}}'},
+                    {"role": "user", "content": f"<content>\n{soup_text}\n</content>"},
+                ]
+            },
+        )
 
-        # Get the number of tokens used
-        global TOKENS_USED
-        TOKENS_USED += ai_response.json()['usage']['total_tokens']
+        if ai_response.status_code == 200:
 
-        ai_content = ai_response.json()["choices"][0]["message"]["content"]
+            # Get the number of tokens used
+            global TOKENS_USED
+            TOKENS_USED += ai_response.json()['usage']['total_tokens']
 
-        # TODO This should be in the create_content function so that this function
-        # is only responsible for working with the openai api and returning json
-        try:
-            ai_content_json = json.loads(ai_content)
+            ai_content = ai_response.json()["choices"][0]["message"]["content"]
+
+            ai_content_json = {}
+            # Test if the content is json
+            try:
+                ai_content_json = json.loads(ai_content)["responseSchema"]
+            except Exception:
+                time.sleep(0.5)
+
             # Process the JSON content if needed
-            content = f'<p>{ai_content_json["responseSchema"]["abstract"]}</p>\n<ul>\n'
-            for bullet in ai_content_json["responseSchema"]["summary"]:
-                content += f"<li>{bullet['bullet']}</li>\n"
-            content += "</ul>"
-        except Exception:
-            # If the content is not JSON, pass it through
-            if is_trimmed:
-                content = "<strong>**Content trimmed**</strong> " + ai_content
+            if "abstract" not in ai_content_json or \
+                "summary" not in ai_content_json or \
+                "bullet" not in ai_content_json["summary"][0]:
+
+                print(f"Invalid JSON response. Retrying.")
+                time.sleep(0.5)
             else:
-                content = "<strong>**Passthrough**</strong> " + ai_content
+                # Cache the content
+                url_hash = hashlib.md5(url.encode()).hexdigest()
+                cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
+                with open(cache_file_path, 'w') as file:
+                    json.dump(ai_response.json(), file, indent=2)
+                return ai_content_json
 
-        # Cache the content
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        cache_file_path = os.path.join(CACHE_DIR, f"{url_hash}.txt")
-        with open(cache_file_path, 'w') as file:
-            file.write(content)
-
-        return content
-    else:
-        # TODO Better handling for rate limiting and length
-        print(f"Error summarizing content. {ai_response.status_code}: {ai_response.text}")
-        return f"Error summarizing content. {ai_response.status_code}: {ai_response.text}"
+        else:
+            # TODO Better handling for rate limiting and length
+            print(f"Error summarizing content. {ai_response.status_code}: {ai_response.text}")
+            return None
 
 
 def read_opml(opml_path):
@@ -191,7 +197,8 @@ def fetch_feeds(opml):
 
 def create_article_content(article_index, number_articles, article, feed_index, number_feeds, feed_title):
 
-    content = f'<h1>{article["title"]}</h1>'
+    content = f'<head><link rel="stylesheet" type="text/css" href="style.css"><title>{article["title"]}</title></head>'
+    content += f'<body><h2>{article["title"]}</h2>'
     if 'published' in article:
         content += f"<p>{article['published'].strftime('%B %d, %Y, %I:%M %p')}<br>"
     if 'author' in article:
@@ -221,10 +228,26 @@ def create_article_content(article_index, number_articles, article, feed_index, 
     content += f" | <a href='{next_filename}'>Next &gt;&gt;</a></p>"
 
     # TODO Iterate through the ai_summary and create the HTML
-    content += f"<p>{article['ai_summary']}</p>"
+    ai_summary = article['ai_summary']
+    if type(ai_summary) == str:
+        content += f"<p>{ai_summary}</p>"
+    else:
+        content += "<p>\n"
+        if 'cache' in ai_summary:
+            content += f"(Cached {ai_summary['cache']}) "
+        content += f"{ai_summary['abstract']}</p>\n"
+        content += "<p><ul>\n"
+        for bullet in ai_summary["summary"]:
+            try:
+                content += f"<li>{bullet['bullet']}</li>\n"
+            except Exception:
+                content += f"<li>{bullet}</li>\n"
+        content += "</ul></p>\n"
 
     if 'link' in article:
         content += f"<p><a href='{article['link']}'>Full Article</a></p>"
+
+    content += "</body>"
 
     return content
 
@@ -270,7 +293,7 @@ def create_epub(opml, feeds):
 
     number_feeds = len(feeds)
 
-    title = f"{opml['title']} {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
+    title = f"{opml['title']} - {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
 
     book = epub.EpubBook()
     book.set_title(title)
