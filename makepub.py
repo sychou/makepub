@@ -95,6 +95,8 @@ def ai_summarize(url):
 
         ai_content = ai_response.json()["choices"][0]["message"]["content"]
 
+        # TODO This should be in the create_content function so that this function
+        # is only responsible for working with the openai api and returning json
         try:
             ai_content_json = json.loads(ai_content)
             # Process the JSON content if needed
@@ -189,7 +191,7 @@ def fetch_feeds(opml):
 
 def create_article_content(article_index, number_articles, article, feed_index, number_feeds, feed_title):
 
-    content = f"<h2>{article['title']}</h2>"
+    content = f'<h1>{article["title"]}</h1>'
     if 'published' in article:
         content += f"<p>{article['published'].strftime('%B %d, %Y, %I:%M %p')}<br>"
     if 'author' in article:
@@ -218,6 +220,7 @@ def create_article_content(article_index, number_articles, article, feed_index, 
 
     content += f" | <a href='{next_filename}'>Next &gt;&gt;</a></p>"
 
+    # TODO Iterate through the ai_summary and create the HTML
     content += f"<p>{article['ai_summary']}</p>"
 
     if 'link' in article:
@@ -265,6 +268,8 @@ def create_feed_content(feed_title, feed, number_feeds):
 
 def create_epub(opml, feeds):
 
+    number_feeds = len(feeds)
+
     title = f"{opml['title']} {datetime.now().strftime('%B %-d, %Y %-I:%M %p')}"
 
     book = epub.EpubBook()
@@ -274,17 +279,23 @@ def create_epub(opml, feeds):
     book.add_author('Makepub')
     book.add_metadata('calibre', 'series', 'Makepub')
 
+    # Add the stylesheet
+    css_item = epub.EpubItem(file_name='style.css', media_type='text/css')
+    css_item.content=open('style.css', 'r').read()
+    book.add_item(css_item)
+
+    # Prepare to create the feed sections and articles
     spine_items = ['nav']  # Initial 'nav' for eBook navigation
     toc_items = []
 
-    number_feeds = len(feeds)
-
-    # Iterate over the articles dictionary
+    # Iterate over the feeds dictionary
     for i, (feed_title, feed) in enumerate(feeds.items(), start=1):
 
         # Create the feed content
         feed_epub = epub.EpubHtml(title=feed_title, file_name=feed['filename'], lang='en')
         feed_epub.content = create_feed_content(feed_title, feed, number_feeds)
+
+        # Add to the appropriate lists
         book.add_item(feed_epub)
         spine_items.append(feed_epub) # type: ignore
         toc_items.append(feed_epub)
@@ -344,7 +355,7 @@ def email_epub(epub_file):
 
     # Send the email through GMail's SMTP server
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        with smtplib.SMTP_SSL(SMTP_SERVER, 465) as smtp:
             smtp.login(SMTP_FROM, SMTP_PASSWORD)
             smtp.send_message(msg)
             print("Email sent successfully!")
