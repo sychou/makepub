@@ -3,12 +3,12 @@ h2 {
     font-size: 1.25em; /* Or your preferred size */
 }
 
-ul {
-    padding-left: 0px;
+body ul {
+    padding-left: 0;
     margin-left: 0;
 }
 
-li {
+body ul li {
     margin-left: 0;
     padding-left: 0;
 }
