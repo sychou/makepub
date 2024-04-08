@@ -118,6 +118,7 @@ def ai_summarize(url):
             # Process the JSON content if needed
             if "abstract" not in ai_content_json or \
                 "summary" not in ai_content_json or \
+                len(ai_content_json["summary"]) == 0 or \
                 "bullet" not in ai_content_json["summary"][0]:
 
                 print(f"Invalid JSON response. Retrying.")
