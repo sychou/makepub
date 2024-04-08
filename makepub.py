@@ -80,8 +80,11 @@ def ai_summarize(url):
     # Use OpenAI chat API to summarize the content
     print(f"=> Contacting AI")
 
+    attempts = 0
+
     # Retry if the response is not 200
-    while True:
+    while True and attempts < 3:
+        attempts += 1
         ai_response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
@@ -133,9 +136,10 @@ def ai_summarize(url):
 
         else:
             # TODO Better handling for rate limiting and length
-            print(f"Error summarizing content. {ai_response.status_code}: {ai_response.text}")
-            return None
+            print(f"Error  {ai_response.status_code}: {ai_response.text}")
+            return "Error {ai_response.status_code}: {ai_response.text}"
 
+    return "Error: Too many attempts."
 
 def read_opml(opml_path):
     data = {'title': None, 'feeds': []}
